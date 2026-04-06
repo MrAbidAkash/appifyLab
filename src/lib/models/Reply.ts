@@ -7,7 +7,6 @@ const ReplySchema: Schema = new Schema(
     comment: { type: Schema.Types.ObjectId, ref: "Comment", required: true },
     author: { type: Schema.Types.ObjectId, ref: "User", required: true },
     content: { type: String, required: true },
-    // likes: [{ type: Schema.Types.ObjectId, ref: "User" }],
     reactions: [
       {
         userId: { type: Schema.Types.ObjectId, ref: "User" },
@@ -21,10 +20,11 @@ const ReplySchema: Schema = new Schema(
   { timestamps: true },
 );
 
+// ✅ Prevent duplicate reply IDs
 ReplySchema.post("save", async function (doc) {
   try {
     await Comment.findByIdAndUpdate(doc.comment, {
-      $push: { replies: doc._id },
+      $addToSet: { replies: doc._id }, // ✅ FIXED
     });
   } catch (err) {
     console.error("Error adding reply ref to comment:", err);
@@ -32,4 +32,5 @@ ReplySchema.post("save", async function (doc) {
 });
 
 const Reply = mongoose.models.Reply || mongoose.model("Reply", ReplySchema);
+
 export default Reply;

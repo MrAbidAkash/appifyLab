@@ -6,22 +6,16 @@ import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
-dayjs.extend(relativeTime);
-import User from "@/lib/models/User";
-import Reply from "@/lib/models/Reply";
 import mongoose from "mongoose";
 
-void User;
-void Reply;
+dayjs.extend(relativeTime);
 
-// Authentication middleware
+// ✅ AUTH
 const authenticateUser = async () => {
   const cookieStore = await cookies();
   const token = cookieStore.get("token")?.value;
 
-  if (!token) {
-    throw new Error("Unauthorized");
-  }
+  if (!token) throw new Error("Unauthorized");
 
   try {
     const decoded: any = jwt.verify(token, process.env.JWT_SECRET || "secret");
@@ -31,9 +25,10 @@ const authenticateUser = async () => {
   }
 };
 
+// ✅ TIME FORMAT
 function shortTime(date: Date) {
   const long = dayjs(date).fromNow(true);
-  const short = long
+  return long
     .replace(/a few seconds?/, "5s")
     .replace(/\ban? /, "1")
     .replace("seconds", "s")
@@ -47,9 +42,8 @@ function shortTime(date: Date) {
     .replace("months", "mo")
     .replace("month", "mo")
     .replace("years", "y")
-    .replace("year", "y");
-
-  return short.replace(/\s+/g, "");
+    .replace("year", "y")
+    .replace(/\s+/g, "");
 }
 
 export async function GET(
@@ -58,52 +52,38 @@ export async function GET(
 ) {
   try {
     await connectToDatabase();
-
-    // Authentication
     const userId = await authenticateUser();
-
     const { id: postId } = await params;
 
     if (!mongoose.Types.ObjectId.isValid(postId)) {
       return NextResponse.json({ error: "Invalid post ID" }, { status: 400 });
     }
 
-    // Pagination for comments
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "5"); // Show fewer comments initially
+    const limit = parseInt(searchParams.get("limit") || "5");
     const skip = (page - 1) * limit;
 
-    // Optimized aggregation for comments with pagination
     const commentsResult = await Comment.aggregate([
-      // Match comments for this post
       {
         $match: {
           post: new mongoose.Types.ObjectId(postId),
         },
       },
 
-      // Lookup author details
+      // ✅ AUTHOR
       {
         $lookup: {
           from: "users",
           localField: "author",
           foreignField: "_id",
           as: "author",
-          pipeline: [
-            {
-              $project: {
-                _id: 1,
-                firstName: 1,
-                lastName: 1,
-              },
-            },
-          ],
+          pipeline: [{ $project: { _id: 1, firstName: 1, lastName: 1 } }],
         },
       },
       { $unwind: "$author" },
 
-      // Lookup replies with pagination
+      // ✅ REPLIES (LIMITED)
       {
         $lookup: {
           from: "replies",
@@ -133,18 +113,38 @@ export async function GET(
             },
             { $unwind: "$author" },
             { $sort: { createdAt: -1 } },
-            // Limit replies per comment for performance
             { $limit: 3 },
           ],
           as: "replies",
         },
       },
 
-      // Add user reaction and counts
+      // ✅ TRUE REPLY COUNT (FIXED)
+      {
+        $lookup: {
+          from: "replies",
+          let: { commentId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$comment", "$$commentId"] },
+              },
+            },
+            { $count: "count" },
+          ],
+          as: "replyCount",
+        },
+      },
+
+      // ✅ ADD FIELDS
       {
         $addFields: {
           totalReactions: { $size: { $ifNull: ["$reactions", []] } },
-          totalReplies: { $size: { $ifNull: ["$replies", []] } },
+
+          totalReplies: {
+            $ifNull: [{ $arrayElemAt: ["$replyCount.count", 0] }, 0],
+          },
+
           userReaction: {
             $let: {
               vars: {
@@ -172,7 +172,7 @@ export async function GET(
         },
       },
 
-      // Get total count for pagination
+      // ✅ PAGINATION
       {
         $facet: {
           metadata: [{ $count: "total" }],
@@ -180,18 +180,6 @@ export async function GET(
             { $sort: { createdAt: -1 } },
             { $skip: skip },
             { $limit: limit },
-            {
-              $project: {
-                _id: 1,
-                content: 1,
-                createdAt: 1,
-                author: 1,
-                replies: 1,
-                totalReactions: 1,
-                totalReplies: 1,
-                userReaction: 1,
-              },
-            },
           ],
         },
       },
@@ -201,15 +189,14 @@ export async function GET(
     const comments = result?.data || [];
     const total = result?.metadata?.[0]?.total || 0;
 
-    // Add relative time formatting
-    const commentsWithTime = comments.map((comment: any) => ({
-      ...comment,
-      createdAt: shortTime(comment.createdAt),
+    const formatted = comments.map((c: any) => ({
+      ...c,
+      createdAt: shortTime(c.createdAt),
     }));
 
     return NextResponse.json({
       success: true,
-      comments: commentsWithTime,
+      comments: formatted,
       pagination: {
         total,
         page,
@@ -218,7 +205,7 @@ export async function GET(
       },
     });
   } catch (error: any) {
-    console.error("Error in GET comments:", error);
+    console.error("Error:", error);
 
     if (error.message === "Unauthorized" || error.message === "Invalid token") {
       return NextResponse.json({ error: error.message }, { status: 401 });
