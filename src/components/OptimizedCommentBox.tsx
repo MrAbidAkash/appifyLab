@@ -9,7 +9,6 @@ import {
   getUserReaction,
   getTotalReactions,
 } from "@/lib/reactions";
-import dayjs from "dayjs";
 
 interface OptimizedCommentBoxProps {
   postId: string;
@@ -527,10 +526,7 @@ const OptimizedCommentBox = ({
                             </li>
                             <li>
                               <span className="_time_link">
-                                .{" "}
-                                {reply?.createdAt
-                                  ? dayjs(reply.createdAt).fromNow()
-                                  : ""}
+                                . {reply?.createdAt || ""}
                               </span>
                             </li>
                           </ul>
