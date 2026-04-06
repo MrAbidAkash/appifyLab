@@ -15,7 +15,7 @@ interface ReactionButtonProps {
   postId: string;
   userId: string;
   userReaction: string; // Can be empty string if no reaction
-  handleClick?: () => void;
+  handleClick?: (reaction: string | null) => void;
   type?: string;
 }
 
@@ -47,7 +47,7 @@ export default function ReactionButton({
     }
     if (!handleClick) return;
 
-    handleClick();
+    handleClick(reaction);
     // Close menu after selecting a reaction
     setShowMenu(false);
   };

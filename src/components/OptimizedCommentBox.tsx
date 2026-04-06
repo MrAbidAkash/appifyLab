@@ -163,8 +163,8 @@ const OptimizedCommentBox = ({
 
   // Handle reply reaction updates
   const handleReplyReaction = useCallback(
-    async (replyId: string, reaction: string | null) => {
-      // Optimistically update reply in state
+    (replyId: string, newReaction: string | null) => {
+      // Update the reply in state (ReactionButton already handled API call)
       setRepliesByComment((prevReplies) => {
         const updatedReplies = { ...prevReplies };
 
@@ -174,41 +174,25 @@ const OptimizedCommentBox = ({
           const replyIndex = replies.findIndex((r: any) => r._id === replyId);
 
           if (replyIndex !== -1) {
-            const reply = replies[replyIndex];
-            const existingReaction = reply.reactions?.find(
-              (r: any) => r.userId === userId,
-            );
+            updatedReplies[commentId] = replies.map((r: any) => {
+              if (r._id === replyId) {
+                // Clear all reactions for this user and set the new one
+                const filteredReactions =
+                  r.reactions?.filter(
+                    (reaction: any) => reaction.userId !== userId,
+                  ) || [];
+                const updatedReactions = newReaction
+                  ? [...filteredReactions, { userId, type: newReaction }]
+                  : filteredReactions;
 
-            let updatedReplyReactions = [...(reply.reactions || [])];
-
-            if (existingReaction) {
-              if (reaction === null) {
-                // Remove reaction
-                updatedReplyReactions = updatedReplyReactions.filter(
-                  (r: any) => r.userId !== userId,
-                );
-              } else if (existingReaction.type !== reaction) {
-                // Update existing reaction
-                updatedReplyReactions = updatedReplyReactions.map((r: any) =>
-                  r.userId === userId ? { ...r, type: reaction } : r,
-                );
+                return {
+                  ...r,
+                  reactions: updatedReactions,
+                  userReaction: newReaction || "",
+                };
               }
-              // If same reaction, do nothing
-            } else {
-              // Add new reaction
-              updatedReplyReactions.push({ userId, type: reaction });
-            }
-
-            updatedReplies[commentId] = replies.map((r: any) =>
-              r._id === replyId
-                ? {
-                    ...r,
-                    reactions: updatedReplyReactions,
-                    totalReactions: updatedReplyReactions.length,
-                    userReaction: reaction,
-                  }
-                : r,
-            );
+              return r;
+            });
           }
         });
 
@@ -218,42 +202,26 @@ const OptimizedCommentBox = ({
     [userId],
   );
 
-  // Handle comment reaction updates
+  // Handle comment reaction updates (called by ReactionButton after API call)
   const handleCommentReaction = useCallback(
-    async (commentId: string, reaction: string | null) => {
-      // Optimistically update the comment in state
+    (commentId: string, newReaction: string | null) => {
+      // Update the comment in state (ReactionButton already handled API call)
       setComments((prevComments) =>
         prevComments.map((comment) => {
           if (comment._id === commentId) {
-            // Find existing reaction by this user
-            const existingReaction = comment.reactions?.find(
-              (r: any) => r.userId === userId,
-            );
-
-            let updatedReactions = [...(comment.reactions || [])];
-
-            if (existingReaction) {
-              if (reaction === null) {
-                // Remove reaction
-                updatedReactions = updatedReactions.filter(
-                  (r: any) => r.userId !== userId,
-                );
-              } else {
-                // Update existing reaction
-                updatedReactions = updatedReactions.map((r: any) =>
-                  r.userId === userId ? { ...r, type: reaction } : r,
-                );
-              }
-            } else {
-              // Add new reaction
-              updatedReactions.push({ userId, type: reaction });
-            }
+            // Clear all reactions for this user and set the new one
+            const filteredReactions =
+              comment.reactions?.filter(
+                (reaction: any) => reaction.userId !== userId,
+              ) || [];
+            const updatedReactions = newReaction
+              ? [...filteredReactions, { userId, type: newReaction }]
+              : filteredReactions;
 
             return {
               ...comment,
               reactions: updatedReactions,
-              totalReactions: updatedReactions.length,
-              userReaction: reaction,
+              userReaction: newReaction || "",
             };
           }
           return comment;
@@ -396,8 +364,8 @@ const OptimizedCommentBox = ({
                       userId={userId}
                       userReaction={comment.userReaction}
                       type="comment"
-                      handleClick={() =>
-                        handleCommentReaction(comment._id, comment.userReaction)
+                      handleClick={(newReaction) =>
+                        handleCommentReaction(comment._id, newReaction)
                       }
                     />
                   </li>
@@ -509,11 +477,8 @@ const OptimizedCommentBox = ({
                                     userId,
                                   )}
                                   type="reply"
-                                  handleClick={() =>
-                                    handleReplyReaction(
-                                      reply._id,
-                                      getUserReaction(reply.reactions, userId),
-                                    )
+                                  handleClick={(newReaction) =>
+                                    handleReplyReaction(reply._id, newReaction)
                                   }
                                 />
                               </span>
