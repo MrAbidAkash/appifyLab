@@ -78,48 +78,20 @@ export async function GET(
           localField: "author",
           foreignField: "_id",
           as: "author",
-          pipeline: [{ $project: { _id: 1, firstName: 1, lastName: 1 } }],
+          pipeline: [
+            {
+              $project: {
+                _id: 1,
+                firstName: 1,
+                lastName: 1,
+              },
+            },
+          ],
         },
       },
       { $unwind: "$author" },
 
-      // ✅ REPLIES (LIMITED)
-      {
-        $lookup: {
-          from: "replies",
-          let: { commentId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ["$comment", "$$commentId"] },
-              },
-            },
-            {
-              $lookup: {
-                from: "users",
-                localField: "author",
-                foreignField: "_id",
-                as: "author",
-                pipeline: [
-                  {
-                    $project: {
-                      _id: 1,
-                      firstName: 1,
-                      lastName: 1,
-                    },
-                  },
-                ],
-              },
-            },
-            { $unwind: "$author" },
-            { $sort: { createdAt: -1 } },
-            { $limit: 3 },
-          ],
-          as: "replies",
-        },
-      },
-
-      // ✅ TRUE REPLY COUNT (FIXED)
+      // ✅ TRUE REPLY COUNT (NO replies array anymore)
       {
         $lookup: {
           from: "replies",
@@ -139,7 +111,9 @@ export async function GET(
       // ✅ ADD FIELDS
       {
         $addFields: {
-          totalReactions: { $size: { $ifNull: ["$reactions", []] } },
+          totalReactions: {
+            $size: { $ifNull: ["$reactions", []] },
+          },
 
           totalReplies: {
             $ifNull: [{ $arrayElemAt: ["$replyCount.count", 0] }, 0],
@@ -172,7 +146,7 @@ export async function GET(
         },
       },
 
-      // ✅ PAGINATION
+      // ✅ PAGINATION + CLEAN PROJECTION
       {
         $facet: {
           metadata: [{ $count: "total" }],
@@ -180,6 +154,21 @@ export async function GET(
             { $sort: { createdAt: -1 } },
             { $skip: skip },
             { $limit: limit },
+            {
+              $project: {
+                _id: 1,
+                post: 1,
+                author: 1,
+                content: 1,
+                createdAt: 1,
+                totalReactions: 1,
+                totalReplies: 1,
+                userReaction: 1,
+                // ❌ replies excluded
+                // ❌ replyCount excluded
+                // ❌ reactions excluded
+              },
+            },
           ],
         },
       },
@@ -189,9 +178,16 @@ export async function GET(
     const comments = result?.data || [];
     const total = result?.metadata?.[0]?.total || 0;
 
+    // ✅ FINAL FORMAT
     const formatted = comments.map((c: any) => ({
-      ...c,
+      _id: c._id,
+      post: c.post,
+      author: c.author,
+      content: c.content,
       createdAt: shortTime(c.createdAt),
+      totalReactions: c.totalReactions,
+      totalReplies: c.totalReplies,
+      userReaction: c.userReaction,
     }));
 
     return NextResponse.json({
